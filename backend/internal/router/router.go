@@ -1,0 +1,66 @@
+package router
+
+import (
+	"hayday-order-system/backend/internal/handlers"
+	"hayday-order-system/backend/internal/middleware"
+	"hayday-order-system/backend/internal/services"
+
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
+)
+
+type Handlers struct {
+	Auth  *handlers.AuthHandler
+	Prod  *handlers.ProductHandler
+	Order *handlers.OrderHandler
+}
+
+func New(
+	authService *services.AuthService,
+	productService *services.ProductService,
+	orderService *services.OrderService,
+) *gin.Engine {
+	r := gin.Default()
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:5173", "http://127.0.0.1:5173"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		AllowCredentials: true,
+	}))
+
+	authHandler := handlers.NewAuthHandler(authService)
+	productHandler := handlers.NewProductHandler(productService)
+	orderHandler := handlers.NewOrderHandler(orderService)
+
+	api := r.Group("/api")
+	{
+		api.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"success": true}) })
+		api.GET("/settings/public", func(c *gin.Context) { c.JSON(200, gin.H{"success": true, "data": gin.H{}}) })
+
+		api.GET("/products", productHandler.PublicList)
+		api.GET("/products/:id/image", productHandler.Image)
+		api.GET("/products/:id", productHandler.PublicGet)
+		api.GET("/categories", productHandler.Categories)
+		api.POST("/orders", orderHandler.Create)
+		api.GET("/orders/track", orderHandler.Track)
+		api.POST("/admin/auth/login", authHandler.Login)
+
+		admin := api.Group("/admin")
+		admin.Use(middleware.RequireAdminAuth(authService))
+		{
+			admin.GET("/me", authHandler.Me)
+
+			admin.GET("/products", productHandler.AdminList)
+			admin.POST("/products", productHandler.AdminCreate)
+			admin.PUT("/products/:id", productHandler.AdminUpdate)
+			admin.DELETE("/products/:id", productHandler.AdminDelete)
+
+			admin.GET("/orders", orderHandler.AdminList)
+			admin.GET("/orders/:id", orderHandler.AdminGet)
+			admin.PATCH("/orders/:id/status", orderHandler.AdminUpdateStatus)
+			admin.GET("/stats", orderHandler.Stats)
+		}
+	}
+
+	return r
+}
