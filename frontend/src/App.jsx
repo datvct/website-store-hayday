@@ -51,6 +51,7 @@ import { useAuthStore } from "./store/useAuthStore";
 import { productApi } from "./api/productApi";
 import { orderApi } from "./api/orderApi";
 import { authApi } from "./api/authApi";
+import { API_BASE_URL } from "./api/client";
 
 const money = new Intl.NumberFormat("vi-VN");
 const quantityOf = (item) => {
@@ -60,7 +61,7 @@ const quantityOf = (item) => {
 const totalQuantity = (items) => items.reduce((total, item) => total + quantityOf(item), 0);
 const imageSrc = (item) =>
   item.imageUrl
-    ? `/api/products/${item.id}/image${item.updatedAt ? `?v=${encodeURIComponent(item.updatedAt)}` : ""}`
+    ? `${API_BASE_URL}/products/${item.id}/image${item.updatedAt ? `?v=${encodeURIComponent(item.updatedAt)}` : ""}`
     : "";
 const DEFAULT_CATEGORIES = ["Nông sản", "Đồ uống", "Bánh ngọt", "Món ăn", "Nguyên liệu", "Thời trang", "Sản phẩm chăn nuôi"];
 

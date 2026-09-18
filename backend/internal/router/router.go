@@ -20,11 +20,16 @@ func New(
 	productService *services.ProductService,
 	categoryService *services.CategoryService,
 	orderService *services.OrderService,
+	frontendOrigin string,
 	imageStorageBaseURL string,
 ) *gin.Engine {
 	r := gin.Default()
+	allowedOrigins := []string{"http://localhost:5173", "http://127.0.0.1:5173"}
+	if frontendOrigin != "" {
+		allowedOrigins = append(allowedOrigins, frontendOrigin)
+	}
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173", "http://127.0.0.1:5173"},
+		AllowOrigins:     allowedOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: true,

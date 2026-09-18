@@ -52,7 +52,7 @@ func main() {
 	}
 	log.Printf("synced product categories: updated=%d", updatedCategories)
 
-	engine := router.New(authService, productService, categoryService, orderService, cfg.ImageStorageBaseURL)
+	engine := router.New(authService, productService, categoryService, orderService, cfg.FrontendOrigin, cfg.ImageStorageBaseURL)
 	port := cfg.Port
 	if port == "" {
 		port = "8080"
