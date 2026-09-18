@@ -20,6 +20,7 @@ import {
   Input,
   InputNumber,
   Menu,
+  Modal,
   Pagination,
   Select,
   Space,
@@ -34,6 +35,7 @@ import {
   BarChartOutlined,
   DashboardOutlined,
   DeleteOutlined,
+  EditOutlined,
   InboxOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
@@ -51,8 +53,16 @@ import { orderApi } from "./api/orderApi";
 import { authApi } from "./api/authApi";
 
 const money = new Intl.NumberFormat("vi-VN");
+const quantityOf = (item) => {
+  const quantity = Number(item?.quantity);
+  return Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 0;
+};
+const totalQuantity = (items) => items.reduce((total, item) => total + quantityOf(item), 0);
 const imageSrc = (item) =>
-  item.imageUrl ? `/api/products/${item.id}/image` : "";
+  item.imageUrl
+    ? `/api/products/${item.id}/image${item.updatedAt ? `?v=${encodeURIComponent(item.updatedAt)}` : ""}`
+    : "";
+const DEFAULT_CATEGORIES = ["Nông sản", "Đồ uống", "Bánh ngọt", "Món ăn", "Nguyên liệu", "Thời trang", "Sản phẩm chăn nuôi"];
 
 function App() {
   return (
@@ -63,6 +73,7 @@ function App() {
         <Route path="product/:id" element={<ProductDetailPage />} />
         <Route path="cart" element={<CartPage />} />
         <Route path="checkout" element={<CheckoutPage />} />
+        <Route path="submit-order" element={<CheckoutPage />} />
         <Route path="track-order" element={<TrackOrderPage />} />
       </Route>
       <Route path="/admin/login" element={<AdminLoginPage />} />
@@ -83,7 +94,7 @@ function StorefrontLayout() {
   const navigate = useNavigate();
   const [showWelcome, setShowWelcome] = useState(false);
   const count = useCartStore((state) =>
-    state.items.reduce((total, item) => total + item.quantity, 0),
+    totalQuantity(state.items),
   );
   useEffect(() => {
     if (!localStorage.getItem("hd_welcome_seen")) setShowWelcome(true);
@@ -122,12 +133,12 @@ function StorefrontLayout() {
             >
               Tra cứu đơn
             </a>
-            <a
+            {/* <a
               className="rounded-lg px-2 py-2 hover:text-farm-dark"
               href="/admin/login"
             >
               Admin
-            </a>
+            </a> */}
             <button
               className="rounded-xl bg-farm px-3 py-2 text-white shadow-none hover:bg-farm-dark"
               onClick={() => navigate("/cart")}
@@ -170,28 +181,24 @@ function HomePage() {
   const [category, setCategory] = useState("all");
   useEffect(() => {
     let active = true;
-    Promise.all([
+    Promise.allSettled([
       productApi.listAll({ query, category }),
       productApi.categories(),
     ])
-      .then(([products, categories]) => {
+      .then(([productsResult, categoriesResult]) => {
+        const products = productsResult.status === "fulfilled" ? productsResult.value : { items: [] };
+        const categories = categoriesResult.status === "fulfilled" ? categoriesResult.value : [];
+        const categoryNames = (Array.isArray(categories) ? categories : categories?.items || [])
+          .map((item) => typeof item === "string" ? item : item?.name)
+          .filter(Boolean);
         if (active)
           setState({
             loading: false,
-            error: "",
+            error: productsResult.status === "rejected" ? productsResult.reason?.message || "Không thể tải sản phẩm" : "",
             items: products.items,
-            categories: ["all", ...categories],
+            categories: ["all", ...(categoryNames.length ? categoryNames : DEFAULT_CATEGORIES)],
           });
       })
-      .catch(
-        (error) =>
-          active &&
-          setState((prev) => ({
-            ...prev,
-            loading: false,
-            error: error.message,
-          })),
-      );
     return () => {
       active = false;
     };
@@ -249,6 +256,7 @@ function HomePage() {
                 ),
               )}
             </select>
+            {query || category !== "all" ? <button type="button" className="btn-secondary text-sm sm:col-span-2" onClick={() => { setQuery(""); setCategory("all"); }}>Xoá bộ lọc</button> : null}
           </div>
         </div>
         <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-farm-dark to-farm p-6 text-white shadow-soft sm:p-8">
@@ -330,30 +338,31 @@ function ProductCard({ item, onDetail, onOrder }) {
         )}
       </div>
       <div className="p-3 sm:p-4">
-        <div className="flex justify-between gap-2 text-[11px] font-bold text-[#718078]">
+        {/* <div className="flex justify-between gap-2 text-[11px] font-bold text-[#718078]">
           <span className="truncate">{item.category}</span>
-        </div>
-        <h3 className="mt-2 min-h-10 font-display text-sm font-black leading-5 sm:text-base">
+        </div> */}
+        <h3 className="mt-2 h-12 font-display text-sm font-black leading-5 sm:text-base">
           {item.name}
         </h3>
-        <span
+        {/* <span
           className={`mt-2 inline-flex rounded-full px-2 py-1 text-[10px] font-black ${item.stockQuantity ? "bg-mint text-farm-dark" : "bg-[#fbe9e5] text-danger"}`}
         >
           {item.stockQuantity ? `Tồn kho: ${item.stockQuantity}` : "Có thể đặt trước"}
-        </span>
+        </span> */}
         <div className="mt-3 flex gap-1.5">
+         <button
+            className="btn-primary flex-1 px-2 py-2 text-xs"
+            onClick={onOrder}
+          >
+            Đặt item
+          </button>
           <button
             className="btn-secondary flex-1 px-2 py-2 text-xs"
             onClick={onDetail}
           >
             Chi tiết
           </button>
-          <button
-            className="btn-primary flex-1 px-2 py-2 text-xs"
-            onClick={onOrder}
-          >
-            Đặt item
-          </button>
+         
         </div>
       </div>
     </article>
@@ -411,13 +420,7 @@ function ProductDetailPage() {
           {product.name}
         </h2>
         <p className="mt-4 leading-7 text-[#718078]">{product.description}</p>
-        <p
-          className={`mt-3 inline-flex w-fit rounded-full px-3 py-1 text-sm font-bold ${product.stockQuantity ? "bg-mint text-farm-dark" : "bg-[#fbe9e5] text-danger"}`}
-        >
-          {product.stockQuantity
-            ? `Tồn kho: ${product.stockQuantity} item`
-            : "Có thể đặt trước nếu shop còn nguồn"}
-        </p>
+        
         <div className="mt-6 flex flex-wrap gap-2">
           <button
             className="btn-primary"
@@ -442,6 +445,7 @@ function CreateOrderPage() {
   const [products, setProducts] = useState([]);
   const [quantities, setQuantities] = useState({});
   const [query, setQuery] = useState("");
+  const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [form, setForm] = useState({
     customerName: "",
     phone: "",
@@ -478,7 +482,7 @@ function CreateOrderPage() {
         ...form,
         items: selected.map((item) => ({
           productId: item.id,
-          quantity: Number(quantities[item.id]),
+          quantity: quantityOf({ quantity: quantities[item.id] }),
         })),
       });
       setState((prev) => ({ ...prev, result, submitting: false }));
@@ -544,42 +548,22 @@ function CreateOrderPage() {
         </div>
       ) : (
         <form onSubmit={submit}>
-          <div className="mt-6 grid gap-2 sm:grid-cols-2">
-            <input
-              className="field"
-              required
-              placeholder="Tên khách hàng"
-              value={form.customerName}
-              onChange={(event) =>
-                setForm({ ...form, customerName: event.target.value })
-              }
-            />
-            <input
-              className="field"
-              required
-              placeholder="Số điện thoại"
-              value={form.phone}
-              onChange={(event) =>
-                setForm({ ...form, phone: event.target.value })
-              }
-            />
-            <input
-              className="field"
-              placeholder="Facebook/Zalo"
-              value={form.contact}
-              onChange={(event) =>
-                setForm({ ...form, contact: event.target.value })
-              }
-            />
-            <textarea
-              className="field"
-              placeholder="Ghi chú order"
-              value={form.note}
-              onChange={(event) =>
-                setForm({ ...form, note: event.target.value })
-              }
-            />
-          </div>
+          {showCustomerForm ? (
+            <div className="mt-6 rounded-2xl border border-[#e4e9dc] bg-[#f7fbf3] p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <strong className="text-farm-dark">Thông tin người đặt</strong>
+                <button type="button" className="text-sm font-bold text-farm underline" onClick={() => setShowCustomerForm(false)}>
+                  Đổi item
+                </button>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <input className="field" required placeholder="Tên khách hàng" value={form.customerName} onChange={(event) => setForm({ ...form, customerName: event.target.value })} />
+                <input className="field" required placeholder="Số điện thoại" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+                <input className="field" placeholder="Facebook/Zalo" value={form.contact} onChange={(event) => setForm({ ...form, contact: event.target.value })} />
+                <textarea className="field" placeholder="Ghi chú order" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} />
+              </div>
+            </div>
+          ) : null}
           <div className="mt-5 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
             <input
               className="field sm:max-w-md"
@@ -614,7 +598,7 @@ function CreateOrderPage() {
                     {item.name}
                   </strong>
                   <span className="block truncate text-xs text-[#718078]">
-                    {item.category} · {item.stockQuantity ? `Còn ${item.stockQuantity}` : "Có thể đặt trước"}
+                    {item.category}
                   </span>
                 </div>
                 <input
@@ -639,9 +623,28 @@ function CreateOrderPage() {
               <span className="text-sm text-[#718078]">Đã chọn {selected.length} loại vật phẩm</span>
               <strong className="ml-3 font-display text-lg text-farm-dark">Shop sẽ báo giá sau</strong>
             </div>
-            <button className="btn-primary" disabled={state.submitting}>
-              {state.submitting ? "Đang tạo order..." : "Gửi order"}
-            </button>
+            {showCustomerForm ? (
+              <button className="btn-primary" disabled={state.submitting}>
+                {state.submitting ? "Đang tạo order..." : "Gửi order"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => selected.length
+                  ? navigate("/submit-order", {
+                      state: {
+                        items: selected.map((item) => ({
+                          ...item,
+                          quantity: quantityOf({ quantity: quantities[item.id] }),
+                        })),
+                      },
+                    })
+                  : setState((prev) => ({ ...prev, error: "Hãy nhập số lượng ít nhất một vật phẩm." }))}
+              >
+                Tiếp tục nhập thông tin
+              </button>
+            )}
           </div>
         </form>
       )}
@@ -714,7 +717,12 @@ function CartPage() {
 
 function CheckoutPage() {
   const navigate = useNavigate();
-  const { items, clear } = useCartStore();
+  const location = useLocation();
+  const cartItems = useCartStore((state) => state.items);
+  const clear = useCartStore((state) => state.clear);
+  const directItems = location.state?.items;
+  const items = Array.isArray(directItems) && directItems.length ? directItems : cartItems;
+  const isDirectOrder = Array.isArray(directItems) && directItems.length > 0;
   const [form, setForm] = useState({
     customerName: "",
     contact: "",
@@ -731,11 +739,11 @@ function CheckoutPage() {
         ...form,
         items: items.map((item) => ({
           productId: item.id,
-          quantity: item.quantity,
+          quantity: quantityOf(item),
         })),
       });
       setResult(result);
-      clear();
+      if (!isDirectOrder) clear();
     } catch (error) {
       setResult({ error: error.message });
     } finally {
@@ -757,12 +765,20 @@ function CheckoutPage() {
         </button>
       </section>
     );
+  if (!items.length)
+    return (
+      <section className="panel mx-auto max-w-xl p-6 text-center sm:p-8">
+        <h2 className="font-display text-3xl font-black">Giỏ hàng đang trống</h2>
+        <Notice>Hãy chọn ít nhất một vật phẩm trước khi đặt hàng.</Notice>
+        <button className="btn-primary" onClick={() => navigate("/")}>Xem sản phẩm</button>
+      </section>
+    );
   return (
     <section className="panel mx-auto max-w-2xl p-5">
       <Header
         title="Thông tin nhận order"
         action="Quay lại"
-        onAction={() => navigate("/cart")}
+        onAction={() => navigate(isDirectOrder ? "/create-order" : "/cart")}
       />
       <form className="grid gap-3 sm:grid-cols-2" onSubmit={submit}>
         <input
@@ -804,6 +820,20 @@ function CheckoutPage() {
           </button>
         </div>
       </form>
+      <div className="mt-5 rounded-2xl border border-[#e4e9dc] bg-[#f7fbf3] p-4">
+        <div className="mb-2 flex items-center justify-between text-sm font-black text-farm-dark">
+          <span>Item khách đã chọn</span>
+          <span>Tổng: {totalQuantity(items)} sản phẩm</span>
+        </div>
+        <div className="grid gap-2 text-sm">
+          {items.map((item) => (
+            <div className="flex justify-between gap-3 border-b border-white py-1 last:border-0" key={item.id}>
+              <span className="truncate">{item.name}</span>
+              <strong className="shrink-0">Số lượng: {quantityOf(item)}</strong>
+            </div>
+          ))}
+        </div>
+      </div>
       {result?.error ? <Notice type="error">{result.error}</Notice> : null}
     </section>
   );
@@ -960,7 +990,9 @@ function AdminShell() {
   const clearAuth = useAuthStore((state) => state.clearAuth);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const selectedKey = location.pathname.includes("products")
+  const selectedKey = location.pathname.includes("categories")
+    ? "/admin/categories"
+    : location.pathname.includes("products")
     ? "/admin/products"
     : location.pathname.includes("orders") || location.pathname.includes("order")
       ? "/admin/orders"
@@ -976,6 +1008,7 @@ function AdminShell() {
   const menuItems = [
     { key: "/admin", icon: <DashboardOutlined />, label: "Dashboard" },
     { key: "/admin/products", icon: <AppstoreOutlined />, label: "Sản phẩm & tồn kho" },
+    { key: "/admin/categories", icon: <AppstoreOutlined />, label: "Danh mục" },
     { key: "/admin/orders", icon: <ShoppingCartOutlined />, label: "Đơn hàng" },
     { key: "/admin/stats", icon: <BarChartOutlined />, label: "Thống kê" },
   ];
@@ -1026,6 +1059,7 @@ function AdminShell() {
           <Routes>
             <Route index element={<AdminDashboardPage />} />
             <Route path="products" element={<AdminProductsPage />} />
+            <Route path="categories" element={<AdminCategoriesPage />} />
             <Route path="orders" element={<AdminOrdersPage />} />
             <Route path="order" element={<Navigate to="/admin/orders" replace />} />
             <Route path="stats" element={<AdminStatsPage />} />
@@ -1033,7 +1067,7 @@ function AdminShell() {
           </Routes>
         </div>
       </main>
-      <Drawer title="Hay Day Admin" placement="left" width={280} open={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} bodyStyle={{ padding: 0 }}>
+      <Drawer title="Hay Day Admin" placement="left" width={280} open={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} styles={{ body: { padding: 0 } }}>
         <Menu mode="inline" selectedKeys={[selectedKey]} onClick={handleNavigate} items={menuItems} />
       </Drawer>
     </div>
@@ -1084,6 +1118,14 @@ function AdminProductsPage() {
   const [saving, setSaving] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("all");
+  const [categories, setCategories] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [editingImage, setEditingImage] = useState(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createImage, setCreateImage] = useState(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [createSaving, setCreateSaving] = useState(false);
   const [form, setForm] = useState({
     sourceTitle: "",
     name: "",
@@ -1091,25 +1133,38 @@ function AdminProductsPage() {
     imageUrl: "",
     stockQuantity: 0,
   });
-  const load = (page = 1, query = search) => {
+  const load = (page = 1, query = search, selectedCategory = category) => {
     setState((prev) => ({ ...prev, loading: true }));
     productApi
-      .adminList({ page, limit: 20, query })
+      .adminList({ page, limit: 20, query, categoryId: selectedCategory })
       .then((result) => setState({ items: result.items, loading: false, page, total: result.total }))
       .catch(() => setState({ items: [], loading: false, page, total: 0 }));
   };
-  useEffect(() => load(1, ""), []);
-  const create = async (event) => {
-    event.preventDefault();
+  const loadCategories = () => productApi.adminCategories().then(setCategories).catch(() => setCategories([]));
+  const categoryOptions = categories.length ? categories : DEFAULT_CATEGORIES.map((name) => ({ id: name, name }));
+  const categoryNames = categoryOptions.map((item) => item.name);
+  useEffect(() => { load(1, "", "all"); loadCategories(); }, []);
+  const create = async () => {
+    if (!form.name.trim() && !form.sourceTitle.trim()) {
+      message.error("Vui lòng nhập tên sản phẩm.");
+      return;
+    }
+    setCreateSaving(true);
     try {
-      await productApi.adminCreate({
+      const created = await productApi.adminCreate({
         ...form,
+        name: form.name.trim(),
+        sourceTitle: form.sourceTitle.trim(),
+        imageUrl: "",
         stockQuantity: Number(form.stockQuantity),
         sortOrder: state.total + 1,
         unit: "item",
         isActive: true,
         description: `Sản phẩm Hay Day: ${form.name || form.sourceTitle}.`,
       });
+      if (createImage) {
+        await productApi.adminUploadImage(created.id, createImage);
+      }
       setForm({
         sourceTitle: "",
         name: "",
@@ -1117,10 +1172,14 @@ function AdminProductsPage() {
         imageUrl: "",
         stockQuantity: 0,
       });
+      setCreateImage(null);
+      setCreateOpen(false);
       message.success("Đã thêm sản phẩm.");
       load();
     } catch (error) {
       message.error(error.message || "Không thể thêm sản phẩm.");
+    } finally {
+      setCreateSaving(false);
     }
   };
   const remove = async (item) => {
@@ -1133,6 +1192,34 @@ function AdminProductsPage() {
       message.error(error.message || "Không thể xoá sản phẩm.");
     } finally {
       setDeleting(null);
+    }
+  };
+  const saveEdit = async () => {
+    if (!editing?.name.trim()) {
+      message.error("Tên sản phẩm không được để trống.");
+      return;
+    }
+    setEditSaving(true);
+    try {
+      await productApi.adminUpdate(editing.id, {
+        name: editing.name.trim(),
+        sourceTitle: editing.sourceTitle.trim(),
+        category: editing.category,
+        description: editing.description.trim(),
+        stockQuantity: Number(editing.stockQuantity || 0),
+        isActive: editing.isActive,
+      });
+      if (editingImage) {
+        await productApi.adminUploadImage(editing.id, editingImage);
+      }
+      message.success("Đã cập nhật sản phẩm.");
+      setEditing(null);
+      setEditingImage(null);
+      load(state.page);
+    } catch (error) {
+      message.error(error.message || "Không thể cập nhật sản phẩm.");
+    } finally {
+      setEditSaving(false);
     }
   };
   return (
@@ -1150,75 +1237,29 @@ function AdminProductsPage() {
             placeholder="Ví dụ: Affogato, bánh..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            onSearch={(value) => { setSearch(value); load(1, value); }}
+            onSearch={(value) => { setSearch(value); load(1, value, category); }}
             className="w-full sm:!max-w-md"
           />
+          <Select
+            showSearch
+            optionFilterProp="label"
+            value={category}
+            onChange={(value) => { setCategory(value); load(1, search, value); }}
+            className="w-full sm:!w-52"
+            options={[{ id: "all", name: "Tất cả danh mục" }, ...categoryOptions].map((item) => ({
+              value: String(item.id),
+              label: item.name,
+            }))}
+          />
+          {search || category !== "all" ? <AntButton onClick={() => { setSearch(""); setCategory("all"); load(1, "", "all"); }}>Xoá bộ lọc</AntButton> : null}
         </div>
       </Card>
-      <div className="panel p-4">
-        <p className="mb-3 text-sm text-[#718078]">
-          Tạo sản phẩm mới hoặc cập nhật số lượng có thể order.
-        </p>
-        <form
-          className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"
-          onSubmit={create}
-        >
-          <input
-            className="field"
-            required
-            placeholder="Tên hiển thị"
-            value={form.name}
-            onChange={(event) => setForm({ ...form, name: event.target.value })}
-          />
-          <input
-            className="field"
-            placeholder="Source title"
-            value={form.sourceTitle}
-            onChange={(event) =>
-              setForm({ ...form, sourceTitle: event.target.value })
-            }
-          />
-          <input
-            className="field"
-            placeholder="Ảnh URL"
-            value={form.imageUrl}
-            onChange={(event) =>
-              setForm({ ...form, imageUrl: event.target.value })
-            }
-          />
-          <div className="flex h-[46px] items-center gap-2 rounded-xl border border-dashed border-[#cbdacb] bg-mint px-2 text-xs text-farm-dark">
-            {form.imageUrl ? <img className="h-9 w-9 rounded-lg object-contain" src={form.imageUrl} alt="Preview" onError={(event) => { event.currentTarget.style.display = "none" }} /> : null}
-            <span>{form.imageUrl ? "Preview ảnh" : "Dán URL để xem ảnh"}</span>
-          </div>
-          <select
-            className="field"
-            value={form.category}
-            onChange={(event) =>
-              setForm({ ...form, category: event.target.value })
-            }
-          >
-            <option>Nông sản</option>
-            <option>Đồ uống</option>
-            <option>Bánh ngọt</option>
-            <option>Món ăn</option>
-            <option>Nguyên liệu</option>
-            <option>Thời trang</option>
-            <option>Sản phẩm chăn nuôi</option>
-          </select>
-          <input
-            className="field"
-            type="number"
-            min="0"
-            placeholder="Số lượng tồn"
-            value={form.stockQuantity}
-            onChange={(event) =>
-              setForm({ ...form, stockQuantity: event.target.value })
-            }
-          />
-          <button className="btn-primary sm:col-span-2 lg:col-span-2">
-            Tạo sản phẩm
-          </button>
-        </form>
+      <div className="flex items-center justify-between rounded-2xl bg-[#eaf4e6] p-4">
+        <div>
+          <strong className="block text-[#173d2b]">Quản lý sản phẩm</strong>
+          <span className="text-sm text-[#718078]">Tạo sản phẩm và upload ảnh trực tiếp lên MinIO.</span>
+        </div>
+        <AntButton type="primary" onClick={() => setCreateOpen(true)}>Tạo sản phẩm</AntButton>
       </div>
       <div className="panel overflow-hidden">
         <div className="hidden overflow-auto md:block">
@@ -1263,6 +1304,7 @@ function AdminProductsPage() {
                   </td>
                   <td className="p-3">
                     <div className="flex items-center gap-2">
+                    <AntButton size="small" icon={<EditOutlined />} onClick={() => { setEditing({ ...item, description: item.description || "" }); setEditingImage(null); }}>Sửa</AntButton>
                     <button
                       className="btn-secondary px-3 py-2 text-xs"
                       disabled={saving === item.id}
@@ -1298,6 +1340,7 @@ function AdminProductsPage() {
                 <div className="mt-2 flex items-center gap-2">
                   <InputNumber className="!w-28" min={0} value={item.stockQuantity || 0} onChange={(value) => setState((prev) => ({ ...prev, items: prev.items.map((current) => current.id === item.id ? { ...current, stockQuantity: value || 0 } : current) }))} />
                   <div className="flex gap-2">
+                    <AntButton size="small" icon={<EditOutlined />} onClick={() => { setEditing({ ...item, description: item.description || "" }); setEditingImage(null); }}>Sửa</AntButton>
                     <AntButton size="small" type="primary" icon={<SaveOutlined />} loading={saving === item.id} onClick={async () => { setSaving(item.id); try { await productApi.adminUpdate(item.id, { stockQuantity: Number(item.stockQuantity) }); message.success("Đã cập nhật tồn kho."); load(); } catch (error) { message.error(error.message || "Không thể cập nhật tồn kho."); } finally { setSaving(null); } }}>Lưu</AntButton>
                     <Popconfirm title="Xoá sản phẩm này?" okText="Xoá" cancelText="Huỷ" okButtonProps={{ danger: true }} onConfirm={() => remove(item)}>
                       <AntButton danger size="small" icon={<DeleteOutlined />} loading={deleting === item.id}>Xoá</AntButton>
@@ -1309,7 +1352,114 @@ function AdminProductsPage() {
           ))}
         </div>
       </div>
+      <Modal title="Tạo sản phẩm" open={createOpen} onCancel={() => setCreateOpen(false)} onOk={create} okText="Tạo sản phẩm" cancelText="Huỷ" confirmLoading={createSaving} width={560}>
+        <div className="grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input placeholder="Tên hiển thị" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+            <Input placeholder="Source title" value={form.sourceTitle} onChange={(event) => setForm({ ...form, sourceTitle: event.target.value })} />
+          </div>
+          <Select showSearch optionFilterProp="label" value={form.category} onChange={(value) => setForm({ ...form, category: value })} options={categoryNames.map((value) => ({ value, label: value }))} />
+          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setCreateImage(event.target.files?.[0] || null)} />
+          <InputNumber className="!w-full" min={0} addonAfter="tồn" value={form.stockQuantity} onChange={(value) => setForm({ ...form, stockQuantity: value || 0 })} />
+        </div>
+      </Modal>
+      <Modal title="Chỉnh sửa sản phẩm" open={Boolean(editing)} onCancel={() => { setEditing(null); setEditingImage(null); }} onOk={saveEdit} okText="Lưu thay đổi" cancelText="Huỷ" confirmLoading={editSaving} width={560}>
+        {editing ? <div className="grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input placeholder="Tên hiển thị" value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} />
+            <Input placeholder="Source title" value={editing.sourceTitle} onChange={(event) => setEditing({ ...editing, sourceTitle: event.target.value })} />
+          </div>
+          <Select showSearch optionFilterProp="label" value={editing.category} onChange={(value) => setEditing({ ...editing, category: value })} options={categoryNames.map((value) => ({ value, label: value }))} />
+          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setEditingImage(event.target.files?.[0] || null)} />
+          <div className="flex items-center gap-3 rounded-xl border border-dashed border-[#cbdacb] bg-[#f7fbf3] p-2">
+            {editingImage ? <img className="h-14 w-14 rounded-lg object-contain" src={URL.createObjectURL(editingImage)} alt="Preview ảnh mới" /> : editing.imageUrl ? <img className="h-14 w-14 rounded-lg object-contain" src={imageSrc(editing)} alt="Ảnh hiện tại" /> : <PictureOutlined className="text-2xl text-[#718078]" />}
+            <span className="text-xs text-[#718078]">{editingImage ? editingImage.name : "Ảnh hiện tại trên MinIO"}</span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <InputNumber className="!w-full" min={0} addonAfter="tồn" value={editing.stockQuantity || 0} onChange={(value) => setEditing({ ...editing, stockQuantity: value || 0 })} />
+            <Select value={editing.isActive !== false ? true : false} onChange={(value) => setEditing({ ...editing, isActive: value })} options={[{ value: true, label: "Đang hiển thị" }, { value: false, label: "Tạm ẩn" }]} />
+          </div>
+          <Input.TextArea autoSize={{ minRows: 3, maxRows: 6 }} placeholder="Mô tả sản phẩm" value={editing.description || ""} onChange={(event) => setEditing({ ...editing, description: event.target.value })} />
+        </div> : null}
+      </Modal>
       <Pagination current={state.page} pageSize={20} total={state.total} showSizeChanger={false} onChange={(page) => load(page)} className="!my-4 !mr-2 !flex !justify-end" />
+    </section>
+  );
+}
+function AdminCategoriesPage() {
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    productApi.adminCategories().then(setCategories).catch(() => setCategories([])).finally(() => setLoading(false));
+  };
+  useEffect(() => load(), []);
+
+  const save = async () => {
+    if (!modal?.name.trim()) {
+      message.error("Tên danh mục không được để trống.");
+      return;
+    }
+    setSaving(true);
+    try {
+      if (modal.id) {
+        await productApi.adminUpdateCategory(modal.id, { name: modal.name.trim(), isActive: modal.isActive !== false });
+      } else {
+        await productApi.adminCreateCategory(modal.name.trim());
+      }
+      setModal(null);
+      load();
+      message.success("Đã lưu danh mục.");
+    } catch (error) {
+      message.error(error.message || "Không thể lưu danh mục.");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const remove = async (item) => {
+    try {
+      await productApi.adminDeleteCategory(item.id);
+      load();
+      message.success("Đã xoá danh mục.");
+    } catch (error) {
+      message.error(error.message || "Không thể xoá danh mục.");
+    }
+  };
+
+  return (
+    <section className="space-y-5">
+      <Header title="Danh mục máy sản xuất" />
+      <Card bordered={false} className="!rounded-2xl !shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="font-display text-lg font-black text-[#173d2b]">Quản lý danh mục</h3>
+            <p className="text-sm text-[#718078]">Tạo danh mục riêng để dùng khi tạo sản phẩm và lọc danh sách.</p>
+          </div>
+          <AntButton type="primary" onClick={() => setModal({ name: "", isActive: true })}>Thêm danh mục</AntButton>
+        </div>
+      </Card>
+      <Card bordered={false} className="!rounded-2xl !shadow-sm" loading={loading}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[620px] text-left text-sm">
+            <thead className="bg-[#f1f4eb] text-xs uppercase text-[#718078]"><tr><th className="p-3">Tên danh mục</th><th className="p-3">Trạng thái</th><th className="p-3">Cập nhật</th><th className="p-3">Thao tác</th></tr></thead>
+            <tbody>
+              {categories.map((item) => <tr className="border-t border-[#edf0e7]" key={item.id}>
+                <td className="p-3 font-bold text-[#173d2b]">{item.name}</td>
+                <td className="p-3"><Tag color={item.isActive ? "green" : "default"}>{item.isActive ? "Đang sử dụng" : "Tạm ẩn"}</Tag></td>
+                <td className="p-3 text-[#718078]">{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString("vi-VN") : "-"}</td>
+                <td className="p-3"><Space><AntButton size="small" onClick={() => setModal({ ...item })}>Sửa</AntButton><Popconfirm title="Xoá danh mục này?" description="Chỉ xoá được danh mục chưa có sản phẩm." okText="Xoá" cancelText="Huỷ" okButtonProps={{ danger: true }} onConfirm={() => remove(item)}><AntButton danger size="small">Xoá</AntButton></Popconfirm></Space></td>
+              </tr>)}
+            </tbody>
+          </table>
+          {!categories.length && !loading ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Chưa có danh mục" /> : null}
+        </div>
+      </Card>
+      <Modal title={modal?.id ? "Sửa danh mục" : "Thêm danh mục"} open={Boolean(modal)} onCancel={() => setModal(null)} onOk={save} okText="Lưu" cancelText="Huỷ" confirmLoading={saving}>
+        {modal ? <div className="grid gap-3"><Input autoFocus placeholder="Tên danh mục" value={modal.name} onChange={(event) => setModal({ ...modal, name: event.target.value })} /><Select value={modal.isActive !== false} onChange={(value) => setModal({ ...modal, isActive: value })} options={[{ value: true, label: "Đang sử dụng" }, { value: false, label: "Tạm ẩn" }]} /></div> : null}
+      </Modal>
     </section>
   );
 }

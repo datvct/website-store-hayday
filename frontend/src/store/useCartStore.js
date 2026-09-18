@@ -16,6 +16,7 @@ export const useCartStore = create((set, get) => ({
   items: initialItems,
   addItem(product, quantity = 1) {
     set((state) => {
+      quantity = Number.isFinite(Number(quantity)) && Number(quantity) > 0 ? Math.floor(Number(quantity)) : 1
       const existing = state.items.find((item) => item.id === product.id)
       const items = existing
         ? state.items.map((item) => item.id === product.id ? { ...item, quantity: item.quantity + quantity } : item)
@@ -33,7 +34,9 @@ export const useCartStore = create((set, get) => ({
   },
   updateQty(id, quantity) {
     set((state) => {
-      const items = state.items.map((item) => item.id === id ? { ...item, quantity: Math.max(1, quantity) } : item)
+      const parsed = Number(quantity)
+      const safeQuantity = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1
+      const items = state.items.map((item) => item.id === id ? { ...item, quantity: safeQuantity } : item)
       persist(items)
       return { items }
     })

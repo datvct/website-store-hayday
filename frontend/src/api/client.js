@@ -19,7 +19,7 @@ export async function request(path, options = {}) {
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.success === false) {
-    throw new Error(payload.message || `Request failed: ${response.status}`);
+    throw new Error(payload.message || `Yêu cầu không thành công (mã lỗi ${response.status})`);
   }
   return payload.data ?? payload;
 }

@@ -26,11 +26,40 @@ export const productApi = {
     return request(`/products/${id}`)
   },
   categories() {
-    return request('/categories').then((res) => res.items || [])
+    return request('/categories').then((res) =>
+      (Array.isArray(res) ? res : res.items || [])
+        .map((item) => typeof item === 'string' ? item : item?.name)
+        .filter(Boolean)
+    )
   },
-  adminList({ page = 1, limit = 20, query = '' } = {}) {
+  adminCategories() {
+    return request('/admin/categories').then((res) => {
+      const items = Array.isArray(res) ? res : res.items || []
+      return items.map((item, index) => typeof item === 'string'
+        ? { id: `legacy-${index}`, name: item, isActive: true }
+        : item
+      )
+    })
+  },
+  adminCreateCategory(name) {
+    return request('/admin/categories', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    })
+  },
+  adminUpdateCategory(id, payload) {
+    return request(`/admin/categories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  },
+  adminDeleteCategory(id) {
+    return request(`/admin/categories/${id}`, { method: 'DELETE' })
+  },
+  adminList({ page = 1, limit = 20, query = '', categoryId = '' } = {}) {
     const search = new URLSearchParams({ page, limit })
     if (query.trim()) search.set('query', query.trim())
+    if (categoryId && categoryId !== 'all') search.set('categoryId', categoryId)
     return request(`/admin/products?${search.toString()}`)
   },
   async adminListAll() {
@@ -55,6 +84,20 @@ export const productApi = {
     return request(`/admin/products/${id}`, {
       method: 'PUT',
       body: JSON.stringify(payload),
+    })
+  },
+  adminUploadImage(id, file) {
+    const form = new FormData()
+    form.append('image', file)
+    const token = localStorage.getItem('hd_token')
+    return fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'}/admin/products/${id}/image`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    }).then(async (response) => {
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || payload.success === false) throw new Error(payload.message || 'Không thể upload ảnh')
+      return payload.data
     })
   },
   adminDelete(id) {

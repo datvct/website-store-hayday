@@ -91,6 +91,33 @@ npm run dev
 Mở `http://localhost:5173`. Vite đã cấu hình proxy `/api` sang backend tại
 `http://localhost:8080`, vì vậy khi sửa React/CSS không cần build Docker.
 
+### Chuyển ảnh catalog sang S3/MinIO
+
+MinIO là S3-compatible storage dùng cho local. Nó chạy tuỳ chọn và không làm
+FE phải chạy bằng Docker:
+
+```bash
+docker compose --profile storage up -d minio
+python3 -m pip install -r scripts/requirements-s3.txt
+export S3_ENDPOINT=http://localhost:9000
+export S3_ACCESS_KEY=hayday_minio
+export S3_SECRET_KEY=hayday_minio_password
+export S3_BUCKET=hayday-images
+# Backend chạy trong Docker nên dùng hostname minio khi ghi URL vào database.
+export IMAGE_STORAGE_BASE_URL=http://minio:9000/hayday-images
+python3 scripts/migrate_images_to_s3.py
+```
+
+Script sẽ tải từng ảnh wiki, đặt object theo dạng
+`products/<ten-san-pham>-<id>.<ext>`, upload vào bucket và cập nhật
+`products.image_url`. Script có thể chạy lại; sản phẩm đã là ảnh storage sẽ
+được bỏ qua. Backend proxy ảnh qua `/api/products/:id/image`, nên frontend
+không cần biết credential S3.
+
+Nếu cổng database `5433` đang được ứng dụng khác sử dụng, chạy database bằng
+`DB_PORT=55433 docker compose up -d db backend` và thêm
+`export DB_PORT=55433` trước khi chạy migration.
+
 ### Kết nối database bằng TablePlus
 
 PostgreSQL được expose tại `localhost:5433` để mở bằng TablePlus:

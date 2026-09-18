@@ -4,6 +4,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -13,14 +15,59 @@ import (
 	"hayday-order-system/backend/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type ProductHandler struct {
-	service *services.ProductService
+	service          *services.ProductService
+	imageStorageHost string
+	imageStorageBase string
+	storageBucket    string
+	storageClient    *minio.Client
 }
 
-func NewProductHandler(service *services.ProductService) *ProductHandler {
-	return &ProductHandler{service: service}
+func NewProductHandler(service *services.ProductService, imageStorageBaseURL string) *ProductHandler {
+	storageHost := ""
+	if parsed, err := url.Parse(imageStorageBaseURL); err == nil {
+		storageHost = parsed.Hostname()
+	}
+	storageBucket := strings.TrimSpace(os.Getenv("S3_BUCKET"))
+	if storageBucket == "" {
+		storageBucket = "hayday-images"
+	}
+	storageClient := newStorageClient(imageStorageBaseURL, storageBucket)
+	return &ProductHandler{
+		service:          service,
+		imageStorageHost: storageHost,
+		imageStorageBase: strings.TrimRight(imageStorageBaseURL, "/"),
+		storageBucket:    storageBucket,
+		storageClient:    storageClient,
+	}
+}
+
+func newStorageClient(baseURL, bucket string) *minio.Client {
+	endpoint := strings.TrimSpace(os.Getenv("S3_ENDPOINT"))
+	if endpoint == "" {
+		endpoint = baseURL
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Host == "" {
+		return nil
+	}
+	accessKey := strings.TrimSpace(os.Getenv("S3_ACCESS_KEY"))
+	secretKey := strings.TrimSpace(os.Getenv("S3_SECRET_KEY"))
+	if accessKey == "" || secretKey == "" {
+		return nil
+	}
+	client, err := minio.New(parsed.Host, &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
+		Secure: parsed.Scheme == "https",
+	})
+	if err != nil {
+		return nil
+	}
+	return client
 }
 
 func parsePageSize(c *gin.Context, defaultPageSize, maxPageSize int) (int, int) {
@@ -34,12 +81,14 @@ func parsePageSize(c *gin.Context, defaultPageSize, maxPageSize int) (int, int) 
 
 func (h *ProductHandler) PublicList(c *gin.Context) {
 	page, limit := parsePageSize(c, 24, 100)
+	categoryID, _ := strconv.ParseUint(c.Query("categoryId"), 10, 64)
 	products, total, err := h.service.List(services.ProductFilter{
-		Query:    c.Query("query"),
-		Category: c.Query("category"),
-		Page:     page,
-		Limit:    limit,
-		Admin:    false,
+		Query:      c.Query("query"),
+		Category:   c.Query("category"),
+		CategoryID: uint(categoryID),
+		Page:       page,
+		Limit:      limit,
+		Admin:      false,
 	})
 	if err != nil {
 		httpx.Fail(c, http.StatusInternalServerError, err.Error())
@@ -78,7 +127,9 @@ func (h *ProductHandler) Image(c *gin.Context) {
 	}
 
 	imageURL, err := url.Parse(product.ImageURL)
-	if err != nil || imageURL.Scheme != "https" || (imageURL.Hostname() != "static.wikia.nocookie.net" && imageURL.Hostname() != "vignette.wikia.nocookie.net") {
+	allowedWiki := imageURL != nil && imageURL.Scheme == "https" && (imageURL.Hostname() == "static.wikia.nocookie.net" || imageURL.Hostname() == "vignette.wikia.nocookie.net")
+	allowedStorage := imageURL != nil && h.imageStorageHost != "" && imageURL.Hostname() == h.imageStorageHost
+	if err != nil || (!allowedWiki && !allowedStorage) {
 		httpx.Fail(c, http.StatusBadRequest, "Nguồn ảnh không hợp lệ")
 		return
 	}
@@ -94,19 +145,24 @@ func (h *ProductHandler) Image(c *gin.Context) {
 	}
 	defer response.Body.Close()
 
-	c.Header("Cache-Control", "public, max-age=86400")
+	// The proxy URL is stable (/products/:id/image), while the underlying
+	// object can change after an admin edit or a MinIO migration. Do not let a
+	// browser keep serving the previous object for a full day.
+	c.Header("Cache-Control", "no-cache, must-revalidate")
 	c.Header("Content-Type", response.Header.Get("Content-Type"))
 	_, _ = io.Copy(c.Writer, response.Body)
 }
 
 func (h *ProductHandler) AdminList(c *gin.Context) {
 	page, limit := parsePageSize(c, 24, 100)
+	categoryID, _ := strconv.ParseUint(c.Query("categoryId"), 10, 64)
 	products, total, err := h.service.List(services.ProductFilter{
-		Query:    c.Query("query"),
-		Category: c.Query("category"),
-		Page:     page,
-		Limit:    limit,
-		Admin:    true,
+		Query:      c.Query("query"),
+		Category:   c.Query("category"),
+		CategoryID: uint(categoryID),
+		Page:       page,
+		Limit:      limit,
+		Admin:      true,
 	})
 	if err != nil {
 		httpx.Fail(c, http.StatusInternalServerError, err.Error())
@@ -151,6 +207,63 @@ func (h *ProductHandler) AdminUpdate(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, product)
+}
+
+func (h *ProductHandler) AdminUploadImage(c *gin.Context) {
+	if h.storageClient == nil || h.imageStorageBase == "" {
+		httpx.Fail(c, http.StatusServiceUnavailable, "MinIO chưa được cấu hình")
+		return
+	}
+	id, _ := strconv.Atoi(c.Param("id"))
+	product, err := h.service.Get(uint(id), true)
+	if err != nil {
+		httpx.Fail(c, http.StatusNotFound, "Không tìm thấy sản phẩm")
+		return
+	}
+	file, header, err := c.Request.FormFile("image")
+	if err != nil {
+		httpx.Fail(c, http.StatusBadRequest, "Vui lòng chọn file ảnh")
+		return
+	}
+	defer file.Close()
+	if header.Size > 10*1024*1024 {
+		httpx.Fail(c, http.StatusBadRequest, "Ảnh không được vượt quá 10MB")
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	if ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".webp" {
+		httpx.Fail(c, http.StatusBadRequest, "Chỉ hỗ trợ ảnh PNG, JPG hoặc WEBP")
+		return
+	}
+	key := filepath.ToSlash(filepath.Join("products", strconv.FormatUint(uint64(product.ID), 10)+"-"+strconv.FormatInt(time.Now().UnixNano(), 10)+ext))
+	contentType := header.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	exists, err := h.storageClient.BucketExists(c.Request.Context(), h.storageBucket)
+	if err != nil {
+		httpx.Fail(c, http.StatusBadGateway, "Không thể kết nối MinIO")
+		return
+	}
+	if !exists {
+		if err := h.storageClient.MakeBucket(c.Request.Context(), h.storageBucket, minio.MakeBucketOptions{}); err != nil {
+			httpx.Fail(c, http.StatusBadGateway, "Không thể tạo bucket MinIO")
+			return
+		}
+	}
+	if _, err := h.storageClient.PutObject(c.Request.Context(), h.storageBucket, key, file, header.Size, minio.PutObjectOptions{ContentType: contentType, CacheControl: "public, max-age=31536000, immutable"}); err != nil {
+		httpx.Fail(c, http.StatusBadGateway, "Không thể upload ảnh lên MinIO")
+		return
+	}
+
+	imageURL := h.imageStorageBase + "/" + key
+	updated, err := h.service.Update(product.ID, map[string]interface{}{"image_url": imageURL})
+	if err != nil {
+		httpx.Fail(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	httpx.OK(c, updated)
 }
 
 func (h *ProductHandler) AdminDelete(c *gin.Context) {

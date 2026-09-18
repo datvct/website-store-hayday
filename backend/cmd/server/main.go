@@ -37,6 +37,7 @@ func main() {
 	paymentService := services.NewPaymentService(cfg)
 	authService := services.NewAuthService(database, cfg)
 	productService := services.NewProductService(database)
+	categoryService := services.NewCategoryService(database)
 	orderService := services.NewOrderService(database, paymentService)
 
 	if err := authService.EnsureSeedAdmin(); err != nil {
@@ -45,8 +46,13 @@ func main() {
 	if err := seedProducts(productService, cfg.SeedProductsFile); err != nil {
 		log.Fatalf("seed products: %v", err)
 	}
+	updatedCategories, err := categoryService.SyncProductCategories()
+	if err != nil {
+		log.Fatalf("seed categories: %v", err)
+	}
+	log.Printf("synced product categories: updated=%d", updatedCategories)
 
-	engine := router.New(authService, productService, orderService)
+	engine := router.New(authService, productService, categoryService, orderService, cfg.ImageStorageBaseURL)
 	port := cfg.Port
 	if port == "" {
 		port = "8080"

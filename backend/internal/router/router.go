@@ -18,7 +18,9 @@ type Handlers struct {
 func New(
 	authService *services.AuthService,
 	productService *services.ProductService,
+	categoryService *services.CategoryService,
 	orderService *services.OrderService,
+	imageStorageBaseURL string,
 ) *gin.Engine {
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
@@ -29,7 +31,8 @@ func New(
 	}))
 
 	authHandler := handlers.NewAuthHandler(authService)
-	productHandler := handlers.NewProductHandler(productService)
+	productHandler := handlers.NewProductHandler(productService, imageStorageBaseURL)
+	categoryHandler := handlers.NewCategoryHandler(categoryService)
 	orderHandler := handlers.NewOrderHandler(orderService)
 
 	api := r.Group("/api")
@@ -40,7 +43,7 @@ func New(
 		api.GET("/products", productHandler.PublicList)
 		api.GET("/products/:id/image", productHandler.Image)
 		api.GET("/products/:id", productHandler.PublicGet)
-		api.GET("/categories", productHandler.Categories)
+		api.GET("/categories", categoryHandler.List)
 		api.POST("/orders", orderHandler.Create)
 		api.GET("/orders/track", orderHandler.Track)
 		api.POST("/admin/auth/login", authHandler.Login)
@@ -53,7 +56,12 @@ func New(
 			admin.GET("/products", productHandler.AdminList)
 			admin.POST("/products", productHandler.AdminCreate)
 			admin.PUT("/products/:id", productHandler.AdminUpdate)
+			admin.POST("/products/:id/image", productHandler.AdminUploadImage)
 			admin.DELETE("/products/:id", productHandler.AdminDelete)
+			admin.GET("/categories", categoryHandler.AdminList)
+			admin.POST("/categories", categoryHandler.Create)
+			admin.PUT("/categories/:id", categoryHandler.Update)
+			admin.DELETE("/categories/:id", categoryHandler.Delete)
 
 			admin.GET("/orders", orderHandler.AdminList)
 			admin.GET("/orders/:id", orderHandler.AdminGet)
