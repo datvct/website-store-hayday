@@ -5,6 +5,8 @@ services:
       POSTGRES_DB: hayday
       POSTGRES_USER: hayday
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hayday_dev_password}
+    ports:
+      - "0.0.0.0:5433:5432"  
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
