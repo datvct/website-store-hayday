@@ -39,6 +39,10 @@ func main() {
 	productService := services.NewProductService(database)
 	categoryService := services.NewCategoryService(database)
 	orderService := services.NewOrderService(database, paymentService)
+	emailNotifier := services.NewEmailNotifier(
+		cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword,
+		cfg.SMTPFrom, cfg.NotificationEmail,
+	)
 
 	if cfg.SeedOnStartup {
 		if err := authService.EnsureSeedAdmin(); err != nil {
@@ -54,7 +58,7 @@ func main() {
 		log.Printf("synced product categories: updated=%d", updatedCategories)
 	}
 
-	engine := router.New(authService, productService, categoryService, orderService, cfg.FrontendOrigin, cfg.ImageStorageBaseURL)
+	engine := router.New(authService, productService, categoryService, orderService, emailNotifier, cfg.FrontendOrigin, cfg.ImageStorageBaseURL)
 	port := cfg.Port
 	if port == "" {
 		port = "8080"

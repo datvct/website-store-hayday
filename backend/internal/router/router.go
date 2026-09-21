@@ -20,6 +20,7 @@ func New(
 	productService *services.ProductService,
 	categoryService *services.CategoryService,
 	orderService *services.OrderService,
+	emailNotifier *services.EmailNotifier,
 	frontendOrigin string,
 	imageStorageBaseURL string,
 ) *gin.Engine {
@@ -38,7 +39,7 @@ func New(
 	authHandler := handlers.NewAuthHandler(authService)
 	productHandler := handlers.NewProductHandler(productService, imageStorageBaseURL)
 	categoryHandler := handlers.NewCategoryHandler(categoryService)
-	orderHandler := handlers.NewOrderHandler(orderService)
+	orderHandler := handlers.NewOrderHandler(orderService, emailNotifier)
 
 	api := r.Group("/api")
 	{

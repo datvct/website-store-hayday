@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -11,11 +12,12 @@ import (
 )
 
 type OrderHandler struct {
-	service *services.OrderService
+	service  *services.OrderService
+	notifier *services.EmailNotifier
 }
 
-func NewOrderHandler(service *services.OrderService) *OrderHandler {
-	return &OrderHandler{service: service}
+func NewOrderHandler(service *services.OrderService, notifier *services.EmailNotifier) *OrderHandler {
+	return &OrderHandler{service: service, notifier: notifier}
 }
 
 func (h *OrderHandler) Create(c *gin.Context) {
@@ -30,6 +32,11 @@ func (h *OrderHandler) Create(c *gin.Context) {
 		httpx.Fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	go func() {
+		if err := h.notifier.NotifyNewOrder(order, items); err != nil {
+			log.Printf("notify new order %s: %v", order.OrderCode, err)
+		}
+	}()
 
 	httpx.Created(c, gin.H{
 		"order": order,

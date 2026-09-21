@@ -25,6 +25,12 @@ type Config struct {
 	SeedProductsFile    string
 	SeedOnStartup       bool
 	ImageStorageBaseURL string
+	SMTPHost            string
+	SMTPPort            string
+	SMTPUsername        string
+	SMTPPassword        string
+	SMTPFrom            string
+	NotificationEmail   string
 	DefaultPageSize     int
 	MaxPageSize         int
 }
@@ -69,6 +75,12 @@ func Load() Config {
 		SeedProductsFile:    getEnv("SEED_PRODUCTS_FILE", "seeds/products.json"),
 		SeedOnStartup:       strings.EqualFold(getEnv("SEED_ON_STARTUP", "false"), "true"),
 		ImageStorageBaseURL: getEnv("IMAGE_STORAGE_BASE_URL", ""),
+		SMTPHost:            getEnv("SMTP_HOST", "smtp.gmail.com"),
+		SMTPPort:            getEnv("SMTP_PORT", "587"),
+		SMTPUsername:        getEnv("SMTP_USERNAME", ""),
+		SMTPPassword:        getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:            getEnv("SMTP_FROM", ""),
+		NotificationEmail:   getEnv("NOTIFICATION_EMAIL", ""),
 		DefaultPageSize:     getEnvInt("DEFAULT_PAGE_SIZE", 24),
 		MaxPageSize:         getEnvInt("MAX_PAGE_SIZE", 100),
 	}
