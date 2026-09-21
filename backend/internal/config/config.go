@@ -23,6 +23,7 @@ type Config struct {
 	SeedAdminPassword   string
 	SeedAdminRole       string
 	SeedProductsFile    string
+	SeedOnStartup       bool
 	ImageStorageBaseURL string
 	DefaultPageSize     int
 	MaxPageSize         int
@@ -66,6 +67,7 @@ func Load() Config {
 		SeedAdminPassword:   getEnv("ADMIN_PASSWORD", "admin123456"),
 		SeedAdminRole:       getEnv("ADMIN_ROLE", "admin"),
 		SeedProductsFile:    getEnv("SEED_PRODUCTS_FILE", "seeds/products.json"),
+		SeedOnStartup:       strings.EqualFold(getEnv("SEED_ON_STARTUP", "false"), "true"),
 		ImageStorageBaseURL: getEnv("IMAGE_STORAGE_BASE_URL", ""),
 		DefaultPageSize:     getEnvInt("DEFAULT_PAGE_SIZE", 24),
 		MaxPageSize:         getEnvInt("MAX_PAGE_SIZE", 100),

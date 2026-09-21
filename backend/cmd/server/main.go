@@ -40,17 +40,19 @@ func main() {
 	categoryService := services.NewCategoryService(database)
 	orderService := services.NewOrderService(database, paymentService)
 
-	if err := authService.EnsureSeedAdmin(); err != nil {
-		log.Fatalf("seed admin: %v", err)
+	if cfg.SeedOnStartup {
+		if err := authService.EnsureSeedAdmin(); err != nil {
+			log.Fatalf("seed admin: %v", err)
+		}
+		if err := seedProducts(productService, cfg.SeedProductsFile); err != nil {
+			log.Fatalf("seed products: %v", err)
+		}
+		updatedCategories, err := categoryService.SyncProductCategories()
+		if err != nil {
+			log.Fatalf("seed categories: %v", err)
+		}
+		log.Printf("synced product categories: updated=%d", updatedCategories)
 	}
-	if err := seedProducts(productService, cfg.SeedProductsFile); err != nil {
-		log.Fatalf("seed products: %v", err)
-	}
-	updatedCategories, err := categoryService.SyncProductCategories()
-	if err != nil {
-		log.Fatalf("seed categories: %v", err)
-	}
-	log.Printf("synced product categories: updated=%d", updatedCategories)
 
 	engine := router.New(authService, productService, categoryService, orderService, cfg.FrontendOrigin, cfg.ImageStorageBaseURL)
 	port := cfg.Port

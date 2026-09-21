@@ -40,6 +40,7 @@ services:
       MOMO_ACCOUNT_NAME: ${MOMO_ACCOUNT_NAME:-}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123456}
+      SEED_ON_STARTUP: ${SEED_ON_STARTUP:-false}
       SEED_PRODUCTS_FILE: /app/seeds/products.json
     depends_on:
       db:
