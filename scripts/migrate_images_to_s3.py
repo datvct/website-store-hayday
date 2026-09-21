@@ -1,6 +1,7 @@
 """Download catalog images once, upload them to S3/MinIO, and update PostgreSQL."""
 
 import mimetypes
+import json
 import os
 import re
 import unicodedata
@@ -31,6 +32,7 @@ def main():
     access_key = env("S3_ACCESS_KEY", "hayday_minio")
     secret_key = env("S3_SECRET_KEY", "hayday_minio_password")
     bucket = env("S3_BUCKET", "hayday-images")
+    seed_file = env("SEED_PRODUCTS_FILE", "backend/seeds/products.json")
     public_base = env("IMAGE_STORAGE_BASE_URL", f"{endpoint}/{bucket}").rstrip("/")
     s3 = boto3.client("s3", endpoint_url=endpoint, aws_access_key_id=access_key, aws_secret_access_key=secret_key, config=Config(signature_version="s3v4"))
     try:
@@ -45,14 +47,29 @@ def main():
     conn = psycopg2.connect(host=env("DB_HOST", "127.0.0.1"), port=env("DB_PORT", "5433"), dbname=env("POSTGRES_DB", "hayday"), user=env("POSTGRES_USER", "hayday"), password=env("POSTGRES_PASSWORD", "hayday_dev_password"))
     conn.autocommit = False
     rows = conn.cursor()
-    rows.execute("SELECT id, name, image_url FROM products ORDER BY id")
+    source_by_title = {}
+    if os.path.exists(seed_file):
+        with open(seed_file, encoding="utf-8") as source:
+            source_by_title = {
+                item.get("sourceTitle", ""): item.get("imageUrl", "")
+                for item in json.load(source)
+                if item.get("sourceTitle") and item.get("imageUrl")
+            }
+
+    rows.execute("SELECT id, source_title, name, image_url FROM products ORDER BY id")
     products = rows.fetchall()
     updated = 0
     skipped = 0
-    for product_id, name, image_url in products:
-        if not image_url or image_url.startswith("s3://") or "/hayday-images/" in image_url:
+    for product_id, source_title, name, image_url in products:
+        if not image_url or image_url.startswith("s3://"):
             skipped += 1
             continue
+        if "/hayday-images/" in image_url:
+            image_url = source_by_title.get(source_title, "")
+            if not image_url:
+                skipped += 1
+                print(f"SKIP {product_id} {name}: no source image URL")
+                continue
         try:
             response = requests.get(image_url, timeout=25)
             response.raise_for_status()
