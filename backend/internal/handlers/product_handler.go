@@ -134,6 +134,41 @@ func (h *ProductHandler) Image(c *gin.Context) {
 		return
 	}
 
+	// Objects uploaded to MinIO are private by default. Read them with the
+	// configured S3 credentials instead of making the bucket publicly readable.
+	if allowedStorage {
+		if h.storageClient == nil {
+			httpx.Fail(c, http.StatusBadGateway, "Không thể kết nối MinIO")
+			return
+		}
+		prefix := "/" + strings.Trim(h.storageBucket, "/") + "/"
+		key := strings.TrimPrefix(imageURL.Path, prefix)
+		if key == imageURL.Path || key == "" {
+			httpx.Fail(c, http.StatusBadRequest, "Đường dẫn ảnh MinIO không hợp lệ")
+			return
+		}
+
+		object, err := h.storageClient.GetObject(c.Request.Context(), h.storageBucket, key, minio.GetObjectOptions{})
+		if err != nil {
+			httpx.Fail(c, http.StatusBadGateway, "Không tải được ảnh sản phẩm")
+			return
+		}
+		defer object.Close()
+		info, err := object.Stat()
+		if err != nil {
+			httpx.Fail(c, http.StatusBadGateway, "Không tải được ảnh sản phẩm")
+			return
+		}
+		c.Header("Cache-Control", "no-cache, must-revalidate")
+		contentType := info.ContentType
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		c.Header("Content-Type", contentType)
+		_, _ = io.Copy(c.Writer, object)
+		return
+	}
+
 	client := &http.Client{Timeout: 20 * time.Second}
 	response, err := client.Get(imageURL.String())
 	if err != nil || response.StatusCode >= http.StatusBadRequest {
