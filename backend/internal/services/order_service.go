@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"hayday-order-system/backend/internal/models"
@@ -49,7 +50,10 @@ func (s *OrderService) nextOrderCode() (string, error) {
 }
 
 func (s *OrderService) Create(input CreateOrderInput) (*models.Order, []models.OrderItem, error) {
-	if input.CustomerName == "" || input.Phone == "" {
+	input.CustomerName = strings.TrimSpace(input.CustomerName)
+	input.Phone = strings.TrimSpace(input.Phone)
+	input.Contact = strings.TrimSpace(input.Contact)
+	if input.CustomerName == "" || input.Contact == "" {
 		return nil, nil, errors.New("thiếu thông tin khách hàng")
 	}
 	if len(input.Items) == 0 {
@@ -118,9 +122,15 @@ func (s *OrderService) Create(input CreateOrderInput) (*models.Order, []models.O
 	return &order, orderItems, nil
 }
 
-func (s *OrderService) Track(orderCode, phone string) (*models.Order, []models.OrderItem, error) {
+func (s *OrderService) Track(orderCode, phone, contact string) (*models.Order, []models.OrderItem, error) {
 	var order models.Order
-	if err := s.db.Where("order_code = ? AND phone = ?", orderCode, phone).First(&order).Error; err != nil {
+	query := s.db.Where("order_code = ?", orderCode)
+	if contact != "" {
+		query = query.Where("contact = ?", contact)
+	} else {
+		query = query.Where("phone = ?", phone)
+	}
+	if err := query.First(&order).Error; err != nil {
 		return nil, nil, err
 	}
 	var items []models.OrderItem

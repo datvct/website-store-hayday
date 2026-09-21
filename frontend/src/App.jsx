@@ -112,9 +112,11 @@ function StorefrontLayout() {
             className="flex items-center gap-3 bg-transparent p-0 text-left text-ink shadow-none hover:bg-transparent hover:shadow-none"
             onClick={() => navigate("/")}
           >
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl rounded-bl-md bg-gradient-to-br from-farm to-[#73ad62] font-display text-white shadow-lg shadow-farm/20">
-              HD
-            </span>
+            <img
+              className="h-11 w-11 shrink-0 rounded-2xl rounded-bl-md object-cover shadow-lg shadow-farm/20"
+              src="/images/hayday.png"
+              alt="Hay Day Order"
+            />
             <span>
               <strong className="block font-display text-lg leading-none">
                 Hay Day Order
@@ -446,6 +448,8 @@ function CreateOrderPage() {
   const [products, setProducts] = useState([]);
   const [quantities, setQuantities] = useState({});
   const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("all");
+  const [categories, setCategories] = useState([]);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [form, setForm] = useState({
     customerName: "",
@@ -460,16 +464,20 @@ function CreateOrderPage() {
     result: null,
   });
   useEffect(() => {
-    productApi
-      .listAll()
-      .then((result) => setProducts(result.items || []))
+    Promise.all([productApi.listAll(), productApi.categories()])
+      .then(([result, categoryResult]) => {
+        setProducts(result.items || []);
+        setCategories((Array.isArray(categoryResult) ? categoryResult : []).filter(Boolean));
+      })
       .catch((error) => setState((prev) => ({ ...prev, error: error.message })))
       .finally(() => setState((prev) => ({ ...prev, loading: false })));
   }, []);
   const selected = products.filter((item) => Number(quantities[item.id]) > 0);
-  const visible = products.filter((item) =>
-    `${item.name} ${item.category}`.toLowerCase().includes(query.toLowerCase()),
-  );
+  const visible = products.filter((item) => {
+    const matchesQuery = `${item.name} ${item.category}`.toLowerCase().includes(query.toLowerCase());
+    const matchesCategory = category === "all" || item.category === category;
+    return matchesQuery && matchesCategory;
+  });
   const submit = async (event) => {
     event.preventDefault();
     if (!selected.length)
@@ -559,19 +567,27 @@ function CreateOrderPage() {
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <input className="field" required placeholder="Tên khách hàng" value={form.customerName} onChange={(event) => setForm({ ...form, customerName: event.target.value })} />
-                <input className="field" required placeholder="Số điện thoại" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
-                <input className="field" placeholder="Facebook/Zalo" value={form.contact} onChange={(event) => setForm({ ...form, contact: event.target.value })} />
+                <input className="field" placeholder="Số điện thoại (không bắt buộc)" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+                <input className="field" required placeholder="Facebook/Zalo (bắt buộc)" value={form.contact} onChange={(event) => setForm({ ...form, contact: event.target.value })} />
                 <textarea className="field" placeholder="Ghi chú order" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} />
               </div>
             </div>
           ) : null}
-          <div className="mt-5 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+          <div className="mt-5 grid gap-2 sm:grid-cols-[1fr_240px_auto] sm:items-center">
             <input
-              className="field sm:max-w-md"
+              className="field"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Tìm nhanh vật phẩm..."
             />
+            <select
+              className="field"
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+            >
+              <option value="all">Tất cả máy sản xuất</option>
+              {categories.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
             <span className="text-sm font-bold text-farm-dark">
               Đã chọn {selected.length} loại
             </span>
@@ -794,13 +810,14 @@ function CheckoutPage() {
         <input
           className="field"
           required
-          placeholder="Số điện thoại"
+          placeholder="Số điện thoại (không bắt buộc)"
           value={form.phone}
           onChange={(event) => setForm({ ...form, phone: event.target.value })}
         />
         <input
           className="field"
-          placeholder="Facebook/Zalo"
+          placeholder="Facebook/Zalo (bắt buộc)"
+          required
           value={form.contact}
           onChange={(event) =>
             setForm({ ...form, contact: event.target.value })
@@ -841,7 +858,7 @@ function CheckoutPage() {
 }
 
 function TrackOrderPage() {
-  const [form, setForm] = useState({ orderCode: "", phone: "" });
+  const [form, setForm] = useState({ orderCode: "", contact: "" });
   const [result, setResult] = useState(null);
   const submit = async (event) => {
     event.preventDefault();
@@ -858,7 +875,7 @@ function TrackOrderPage() {
       </p>
       <h2 className="mt-1 font-display text-3xl font-black">Tra cứu order</h2>
       <p className="mt-2 text-sm text-[#718078]">
-        Nhập mã đơn và số điện thoại đã dùng khi đặt hàng.
+        Nhập mã đơn và thông tin Facebook/Zalo đã dùng khi đặt hàng.
       </p>
       <form className="mt-5 grid gap-3 sm:grid-cols-2" onSubmit={submit}>
         <input
@@ -873,9 +890,9 @@ function TrackOrderPage() {
         <input
           className="field"
           required
-          placeholder="Số điện thoại"
-          value={form.phone}
-          onChange={(event) => setForm({ ...form, phone: event.target.value })}
+          placeholder="Facebook/Zalo"
+          value={form.contact}
+          onChange={(event) => setForm({ ...form, contact: event.target.value })}
         />
         <button className="btn-primary sm:col-span-2">Tra cứu</button>
       </form>
@@ -942,9 +959,11 @@ function AdminLoginPage() {
     <main className="grid min-h-screen place-items-center bg-cream p-4">
       <section className="panel w-full max-w-md p-6 sm:p-8">
         <div className="mb-6 text-center">
-          <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-farm font-display text-xl font-black text-white">
-            HD
-          </span>
+          <img
+            className="mx-auto h-14 w-14 rounded-2xl object-cover"
+            src="/images/hayday.png"
+            alt="Hay Day Order"
+          />
           <h1 className="mt-4 font-display text-3xl font-black">Chào admin</h1>
           <p className="mt-1 text-sm text-[#718078]">
             Quản lý item và order Hay Day
@@ -1023,7 +1042,7 @@ function AdminShell() {
     <div className="flex min-h-screen bg-[#f6f8f2]">
       <aside className={`hidden shrink-0 flex-col bg-[#173d2b] text-white transition-[width] duration-200 md:flex ${collapsed ? "w-[76px]" : "w-64"}`}>
         <div className="flex h-16 shrink-0 items-center justify-center gap-2 border-b border-white/10 px-3">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#f4bd4f] font-display font-black text-[#173d2b]">HD</span>
+          <img className="h-9 w-9 shrink-0 rounded-xl object-cover" src="/images/hayday.png" alt="Hay Day" />
           {!collapsed ? <span className="font-display text-lg font-black">Hay Day Admin</span> : null}
         </div>
         <Menu theme="dark" mode="inline" selectedKeys={[selectedKey]} onClick={handleNavigate} items={menuItems} className="!border-0 !bg-transparent !pt-3" />

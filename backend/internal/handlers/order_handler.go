@@ -40,12 +40,13 @@ func (h *OrderHandler) Create(c *gin.Context) {
 func (h *OrderHandler) Track(c *gin.Context) {
 	orderCode := c.Query("orderCode")
 	phone := c.Query("phone")
-	if orderCode == "" || phone == "" {
-		httpx.Fail(c, http.StatusBadRequest, "Thiếu mã đơn hoặc số điện thoại")
+	contact := c.Query("contact")
+	if orderCode == "" || (phone == "" && contact == "") {
+		httpx.Fail(c, http.StatusBadRequest, "Thiếu mã đơn hoặc thông tin liên hệ")
 		return
 	}
 
-	order, items, err := h.service.Track(orderCode, phone)
+	order, items, err := h.service.Track(orderCode, phone, contact)
 	if err != nil {
 		httpx.Fail(c, http.StatusNotFound, "Không tìm thấy đơn hàng")
 		return
